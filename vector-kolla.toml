@@ -1,0 +1,105 @@
+[api]
+  enabled = true # optional, default
+  playground = true # optional, default
+
+[sources.generic_kolla]
+  type = "file" # required
+  # ignore_older_secs = 300 # optional, no default, seconds
+  include = ["/log/kolla/neutron/neutron*.log", "/log/kolla/nova/nova*.log", "/log/kolla/cinder/cinder*.log", "/log/kolla/heat/heat*.log"] # required
+  read_from = "beginning" # optional, default
+  [sources.generic_kolla.multiline]
+    start_pattern = '\\$'
+    mode = "continue_past"
+    condition_pattern = '\\$'
+    timeout_ms = 1000
+
+[sources.openvswitch_log]
+  type = "file" # required
+  ignore_older_secs = 300 # optional, no default, seconds
+  include = ["/log/kolla/openvswitch/ovs*.log"] # required
+  read_from = "beginning" # optional, default
+
+[sources.rabbitmq_log]
+  type = "file" # required
+  ignore_older_secs = 300 # optional, no default, seconds
+  include = [ "/log/kolla/rabbitmq/*.log"] # required
+  read_from = "beginning" # optional, default
+
+[transforms.parse_generic_kolla_log]
+  type = "remap" # required
+  inputs = ["generic_kolla"] # required
+  drop_on_error = true
+  source = '''
+  . = parse_grok!(.message,"%{TIMESTAMP_ISO8601:timestamp}%{SPACE}%{NUMBER}%{SPACE}%{LOGLEVEL:level}%{SPACE}%{USERNAME:service}%{SPACE}%{GREEDYDATA:message}")
+  .level = downcase!(.level)
+  .time =  parse_regex!(.timestamp,r'(?P<year>[0-9]{4}-[0-9]{2}-[0-9]{2}) (?P<time>[0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{3})')
+  .custom_timestamp = to_timestamp!(.time.year+"T"+.time.time+"Z")
+  .syslog_timestamp = format_timestamp!(.custom_timestamp, format: "%b %d %T")
+  .message, .err = to_string(.message)
+  .message, .err = truncate(.message, limit: 100, ellipsis: true)
+  .syslog, .err = to_string(.syslog_timestamp)+" "+to_string(.level)+" "+to_string(.service)+"[1]: "+.message
+  .message = .syslog
+   '''
+
+
+[transforms.parse_openvswitch_log]
+  type = "remap" # required
+  inputs = ["openvswitch_log"] # required
+  drop_on_error = true
+  source = '''
+  . = parse_grok!(.message,"%{TIMESTAMP_ISO8601:log_time}\\|%{NUMBER:pid}\\|%{DATA:service}\\|%{LOGLEVEL:level}\\|%{GREEDYDATA:message}")
+  .level = downcase!(.level)
+  .custom_timestamp = to_timestamp!(.log_time)
+  .syslog_timestamp = format_timestamp!(.custom_timestamp, format: "%b %d %T")
+  .message, .err = to_string(.message)
+  .message, .err = truncate(.message, limit: 100, ellipsis: true)
+  .syslog, .err = to_string(.syslog_timestamp)+" "+to_string(.level)+" openvswitch-"+to_string(.service)+"[1]: "+.message
+  .message = .syslog
+   '''
+
+
+[transforms.parse_rabbit_log]
+  type = "remap" # required
+  inputs = ["rabbitmq_log"] # required
+  drop_on_error = true
+  source = '''
+  . = parse_grok!(.message,"%{TIMESTAMP_ISO8601:timestamp}%{SPACE}\\[%{LOGLEVEL:level}\\]%{SPACE}%{GREEDYDATA:message}")
+  .level = downcase!(.level)
+  .service = "rabbitmq"
+  .time =  parse_regex!(.timestamp,r'(?P<year>[0-9]{4}-[0-9]{2}-[0-9]{2}) (?P<time>[0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{3})')
+  .custom_timestamp = to_timestamp!(.time.year+"T"+.time.time+"Z")
+  .syslog_timestamp = format_timestamp!(.custom_timestamp, format: "%b %d %T")
+  .message, .err = to_string(.message)
+  .message, .err = truncate(.message, limit: 100, ellipsis: true)
+  .syslog, .err = to_string(.syslog_timestamp)+" "+to_string(.level)+" "+to_string(.service)+"[1]: "+.message
+  .message = .syslog
+   '''
+
+
+# [transforms.filter_neutron_log]
+#   type = "filter" # required
+#   inputs = ["parse_generic_kolla_log"] # required
+#   condition = '!includes(["info", "debug"], .level)' # required
+
+# debug
+# [sinks.console]
+#   # General
+#   type = "console" # required
+#   inputs = ["parse_openvswitch_log"] # required
+#   target = "stdout" # optional, default
+
+  # Encoding
+  # encoding.codec = "json" # required
+
+[sinks.to_syslog_file]
+  # General
+  type = "file" # required
+  inputs = ["parse_generic_kolla_log","parse_rabbit_log","parse_openvswitch_log"]
+  compression = "none" # optional, default
+  path = "/var/log/vector-kolla.log" # required
+
+  # Encoding
+  encoding.codec = "text" # required
+
+  # Healthcheck
+  healthcheck.enabled = true # optional, default
