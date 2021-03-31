@@ -6,7 +6,7 @@
   type = "file" # required
   # ignore_older_secs = 300 # optional, no default, seconds
   include = ["/log/kolla/neutron/neutron*.log", "/log/kolla/nova/nova*.log", "/log/kolla/cinder/cinder*.log", "/log/kolla/heat/heat*.log"] # required
-  read_from = "beginning" # optional, default
+  read_from = "end" # optional, default
   [sources.generic_kolla.multiline]
     start_pattern = '\\$'
     mode = "continue_past"
@@ -17,13 +17,13 @@
   type = "file" # required
   ignore_older_secs = 300 # optional, no default, seconds
   include = ["/log/kolla/openvswitch/ovs*.log"] # required
-  read_from = "beginning" # optional, default
+  read_from = "end" # optional, default
 
 [sources.rabbitmq_log]
   type = "file" # required
   ignore_older_secs = 300 # optional, no default, seconds
   include = [ "/log/kolla/rabbitmq/*.log"] # required
-  read_from = "beginning" # optional, default
+  read_from = "end" # optional, default
 
 [transforms.parse_generic_kolla_log]
   type = "remap" # required
